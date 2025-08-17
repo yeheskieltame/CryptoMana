@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "src/icp_collateral_backend",
+    "src/mock_tokens"
+]
+resolver = "2"

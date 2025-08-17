@@ -1,0 +1,45 @@
+{
+  "canisters": {
+    "icp_collateral_backend": {
+      "candid": "src/icp_collateral_backend/icp_collateral_backend.did",
+      "package": "icp_collateral_backend",
+      "type": "rust"
+    },
+    "icp_collateral_frontend": {
+      "dependencies": [
+        "icp_collateral_backend"
+      ],
+      "source": [
+        "src/icp_collateral_frontend/dist"
+      ],
+      "type": "assets",
+      "workspace": "icp_collateral_frontend"
+    },
+    "usdc_token": {
+      "candid": "src/mock_tokens/mock_tokens.did",
+      "package": "mock_tokens",
+      "type": "rust",
+      "init_arg": "(\"USD Coin\", \"USDC\", 6, 1000000000000)"
+    },
+    "weth_token": {
+      "candid": "src/mock_tokens/mock_tokens.did",
+      "package": "mock_tokens", 
+      "type": "rust",
+      "init_arg": "(\"Wrapped Ethereum\", \"WETH\", 18, 1000000000000000000000000)"
+    },
+    "wbtc_token": {
+      "candid": "src/mock_tokens/mock_tokens.did",
+      "package": "mock_tokens",
+      "type": "rust", 
+      "init_arg": "(\"Wrapped Bitcoin\", \"WBTC\", 8, 100000000000000)"
+    }
+  },
+  "defaults": {
+    "build": {
+      "args": "",
+      "packtool": ""
+    }
+  },
+  "output_env_file": ".env",
+  "version": 1
+}
