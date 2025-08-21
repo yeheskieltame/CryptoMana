@@ -1,41 +1,123 @@
+
 body {
-  font-family: sans-serif;
-  font-size: 1.5rem;
+  font-family: 'Inter', Arial, sans-serif;
+  background: #fff;
+  color: #222;
+  margin: 0;
+  font-size: 1.1rem;
 }
 
-img {
-  max-width: 50vw;
-  max-height: 25vw;
-  display: block;
-  margin: auto;
+.defi-main {
+  background: #fff;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
-form {
+.defi-header {
+  background: #fff;
+  border-bottom: 1px solid #eee;
+  padding: 2rem 0 1rem 0;
+  text-align: center;
+}
+
+.defi-logo {
+  width: 60px;
+  margin-bottom: 1rem;
+}
+
+.defi-nav {
+  margin: 1rem auto 0 auto;
   display: flex;
   justify-content: center;
-  gap: 0.5em;
-  flex-flow: row wrap;
-  max-width: 40vw;
-  margin: auto;
-  align-items: baseline;
+  gap: 1rem;
+  flex-wrap: wrap;
 }
 
-button[type="submit"] {
-  padding: 5px 20px;
-  margin: 10px auto;
-  float: right;
+.defi-nav button {
+  background: #fff;
+  border: 1px solid #ddd;
+  color: #222;
+  padding: 0.5em 1.5em;
+  border-radius: 6px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: box-shadow 0.2s;
+}
+.defi-nav button.active {
+  box-shadow: 0 2px 8px #eee;
+  border-color: #222;
 }
 
-#greeting {
-  margin: 10px auto;
-  padding: 10px 60px;
-  border: 1px solid #222;
+.defi-content {
+  flex: 1;
+  max-width: 600px;
+  margin: 2rem auto;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 2px 16px #f5f5f5;
+  padding: 2rem;
 }
 
-#greeting:empty {
-  display: none;
+.defi-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.defi-form input, .defi-form select {
+  padding: 0.7em 1em;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 1rem;
+  background: #fafafa;
+}
+.defi-form button {
+  background: #222;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.7em 2em;
+  font-size: 1rem;
+  cursor: pointer;
+  margin-top: 1rem;
+  transition: background 0.2s;
+}
+.defi-form button:hover {
+  background: #444;
 }
 
-.browser-warning {
-  display: none;
+.defi-eventlog {
+  background: #fafafa;
+  border-radius: 8px;
+  padding: 1rem;
+  box-shadow: 0 1px 4px #eee;
+}
+.defi-eventlog ul {
+  list-style: none;
+  padding: 0;
+}
+.defi-eventlog li {
+  padding: 0.5em 0;
+  border-bottom: 1px solid #eee;
+}
+.defi-eventlog li:last-child {
+  border-bottom: none;
+}
+
+.defi-result {
+  margin-top: 1.5rem;
+  background: #f8f8f8;
+  border-radius: 6px;
+  padding: 1rem;
+  font-size: 0.95rem;
+  color: #444;
+  word-break: break-word;
+}
+
+.defi-footer {
+  text-align: center;
+  padding: 2rem 0 1rem 0;
+  color: #aaa;
+  font-size: 0.95rem;
 }
