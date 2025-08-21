@@ -106,7 +106,7 @@ dfx canister call weth_token faucet
 dfx canister call wbtc_token faucet
 ```
 
-### 2. Test Core Functions
+### 2. Test Core Functions & Event Log
 ```bash
 # Supply liquidity
 dfx canister call icp_collateral_backend supply_liquidity '(variant { USDC }, 1000000000)'
@@ -119,6 +119,15 @@ dfx canister call icp_collateral_backend get_borrowing_power '(null)'
 
 # Borrow USDC
 dfx canister call icp_collateral_backend borrow '(variant { USDC }, 500000000)'
+
+# Repay USDC
+dfx canister call icp_collateral_backend repay '(variant { USDC }, 500000)'
+
+# Lock tokens
+dfx canister call icp_collateral_backend lock_tokens '(variant { WETH }, 500000000000000000, 30)'
+
+# Cek event log (riwayat aksi)
+dfx canister call icp_collateral_backend get_event_logs
 ```
 
 ### 3. Run Test Suite

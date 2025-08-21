@@ -58,6 +58,12 @@ dfx canister call icp_collateral_backend lock_tokens '(variant { WETH }, AMOUNT,
 dfx canister call icp_collateral_backend get_lock_positions '(null)'
 ```
 
+### Event Log (Frontend/Analysis)
+```bash
+# Fetch all event logs (riwayat aksi/transaksi)
+dfx canister call icp_collateral_backend get_event_logs
+```
+
 ### Lock Bonus Rates
 - 1-30 days: 1% bonus
 - 31-90 days: 2% bonus  
@@ -160,6 +166,12 @@ dfx canister call icp_collateral_backend get_user_health_factor '(null)'
 ```bash
 # Lock 0.5 WETH for 30 days (1% bonus)
 dfx canister call icp_collateral_backend lock_tokens '(variant { WETH }, 500000000000000000, 30)'
+```
+
+### 5. Cek Event Log (Riwayat Aksi)
+```bash
+# Lihat semua event yang sudah terjadi
+dfx canister call icp_collateral_backend get_event_logs
 ```
 
 ## Canister IDs (Local)
