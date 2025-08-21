@@ -99,6 +99,14 @@ pub struct LockInfo {
     pub bonus_rate: u64, // bonus rate in basis points
 }
 
+#[derive(CandidType, Deserialize, Serialize, Clone, Debug)]
+pub struct EventLog {
+    pub timestamp: Timestamp,
+    pub principal: Principal,
+    pub event_type: String,
+    pub details: String,
+}
+
 #[derive(Default)]
 struct State {
     accounts: HashMap<Principal, Account>,
@@ -108,6 +116,7 @@ struct State {
     total_supply: HashMap<TokenType, TokenAmount>,
     admin: Option<Principal>,
     is_paused: bool,
+    event_logs: Vec<EventLog>,
 }
 
 // === STATE MANAGEMENT ===
@@ -194,33 +203,30 @@ fn supply_liquidity(token_type: TokenType, amount: TokenAmount) -> Result<String
     if amount == 0 {
         return Err("Amount cannot be zero".to_string());
     }
-    
     let caller = caller();
     STATE.with(|state| {
         let mut state = state.borrow_mut();
-        
         if state.is_paused {
             return Err("Contract is paused".to_string());
         }
-        
-        // Only USDC can be supplied for lending
         if token_type != TokenType::USDC {
             return Err("Only USDC can be supplied for lending".to_string());
         }
-        
         let pool = state.pools.get_mut(&token_type).ok_or("Pool not found")?;
         pool.total_liquidity += amount;
-        
-        // Update supplier balance (simplified - in production, use proper token accounting)
         let account = state.accounts.entry(caller).or_insert_with(|| Account {
             principal: caller,
             ..Default::default()
         });
-        
         *account.collateral_positions.entry(token_type).or_insert(0) += amount;
-        
         update_pool_interest_rate(&mut state, &token_type)?;
-        
+        // Log event
+        state.event_logs.push(EventLog {
+            timestamp: ic_cdk::api::time(),
+            principal: caller,
+            event_type: "supply_liquidity".to_string(),
+            details: format!("Supplied {} USDC", amount),
+        });
         Ok(format!("Successfully supplied {} USDC", amount))
     })
 }
@@ -230,32 +236,31 @@ fn deposit_collateral(token_type: TokenType, amount: TokenAmount) -> Result<Stri
     if amount == 0 {
         return Err("Amount cannot be zero".to_string());
     }
-    
     let caller = caller();
     STATE.with(|state| {
         let mut state = state.borrow_mut();
-        
         if state.is_paused {
             return Err("Contract is paused".to_string());
         }
-        
         let is_collateral = state.token_info.get(&token_type)
             .map(|info| info.is_collateral)
             .ok_or("Token not supported")?;
-        
         if !is_collateral {
             return Err("Token cannot be used as collateral".to_string());
         }
-        
         let symbol = state.token_info.get(&token_type).unwrap().symbol.clone();
-        
         let account = state.accounts.entry(caller).or_insert_with(|| Account {
             principal: caller,
             ..Default::default()
         });
-        
         *account.collateral_positions.entry(token_type).or_insert(0) += amount;
-        
+        // Log event
+        state.event_logs.push(EventLog {
+            timestamp: ic_cdk::api::time(),
+            principal: caller,
+            event_type: "deposit_collateral".to_string(),
+            details: format!("Deposited {} {} as collateral", amount, symbol),
+        });
         Ok(format!("Successfully deposited {} {} as collateral", amount, symbol))
     })
 }
@@ -265,47 +270,33 @@ fn borrow(token_type: TokenType, amount: TokenAmount) -> Result<String, String> 
     if amount == 0 {
         return Err("Amount cannot be zero".to_string());
     }
-    
     let caller = caller();
     STATE.with(|state| {
         let mut state = state.borrow_mut();
-        
         if state.is_paused {
             return Err("Contract is paused".to_string());
         }
-        
-        // Only USDC can be borrowed
         if token_type != TokenType::USDC {
             return Err("Only USDC can be borrowed".to_string());
         }
-        
-        // Check available liquidity first
         let (available_liquidity, current_debt) = {
             let pool = state.pools.get(&token_type)
                 .ok_or("Pool not found")?;
             let available = pool.total_liquidity.saturating_sub(pool.total_borrowed);
-            
             let _account = state.accounts.get(&caller)
                 .ok_or("Account not found. Please deposit collateral first")?;
             let debt = calculate_total_debt(&state, &caller)?;
-            
             (available, debt)
         };
-        
         if amount > available_liquidity {
             return Err("Insufficient liquidity in pool".to_string());
         }
-        
-        // Calculate borrowing power
         let borrowing_power = calculate_borrowing_power(&state, &caller)?;
         let new_total_debt = current_debt + amount;
-        
         if new_total_debt > borrowing_power {
             return Err(format!("Insufficient collateral. Max borrow: {}, Requested: {}", 
                              borrowing_power.saturating_sub(current_debt), amount));
         }
-        
-        // Check if account is locked
         {
             let account = state.accounts.get(&caller).unwrap();
             if let Some(unlock_time) = account.locked_until {
@@ -314,16 +305,18 @@ fn borrow(token_type: TokenType, amount: TokenAmount) -> Result<String, String> 
                 }
             }
         }
-        
-        // Update account and pool
         let account = state.accounts.get_mut(&caller).unwrap();
         *account.debt_positions.entry(token_type).or_insert(0) += amount;
-        
         let pool = state.pools.get_mut(&token_type).unwrap();
         pool.total_borrowed += amount;
-        
         update_pool_interest_rate(&mut state, &token_type)?;
-        
+        // Log event
+        state.event_logs.push(EventLog {
+            timestamp: ic_cdk::api::time(),
+            principal: caller,
+            event_type: "borrow".to_string(),
+            details: format!("Borrowed {} USDC", amount),
+        });
         Ok(format!("Successfully borrowed {} USDC", amount))
     })
 }
@@ -333,35 +326,32 @@ fn repay(token_type: TokenType, amount: TokenAmount) -> Result<String, String> {
     if amount == 0 {
         return Err("Amount cannot be zero".to_string());
     }
-    
     let caller = caller();
     STATE.with(|state| {
         let mut state = state.borrow_mut();
-        
         if state.is_paused {
             return Err("Contract is paused".to_string());
         }
-        
         let symbol = state.token_info.get(&token_type).unwrap().symbol.clone();
-        
         let account = state.accounts.get_mut(&caller)
             .ok_or("Account not found")?;
-        
         let current_debt = account.debt_positions.get(&token_type).unwrap_or(&0);
         let repay_amount = amount.min(*current_debt);
-        
         if repay_amount == 0 {
             return Err("No debt to repay".to_string());
         }
-        
         *account.debt_positions.entry(token_type).or_insert(0) -= repay_amount;
-        
         let pool = state.pools.get_mut(&token_type)
             .ok_or("Pool not found")?;
         pool.total_borrowed = pool.total_borrowed.saturating_sub(repay_amount);
-        
         update_pool_interest_rate(&mut state, &token_type)?;
-        
+        // Log event
+        state.event_logs.push(EventLog {
+            timestamp: ic_cdk::api::time(),
+            principal: caller,
+            event_type: "repay".to_string(),
+            details: format!("Repaid {} {}", repay_amount, symbol),
+        });
         Ok(format!("Successfully repaid {} {}", repay_amount, symbol))
     })
 }
@@ -371,55 +361,47 @@ fn withdraw_collateral(token_type: TokenType, amount: TokenAmount) -> Result<Str
     if amount == 0 {
         return Err("Amount cannot be zero".to_string());
     }
-    
     let caller = caller();
     STATE.with(|state| {
         let mut state = state.borrow_mut();
-        
         if state.is_paused {
             return Err("Contract is paused".to_string());
         }
-        
         let symbol = state.token_info.get(&token_type).unwrap().symbol.clone();
-        
-        // Check if account is locked and has sufficient balance
         {
             let account = state.accounts.get(&caller)
                 .ok_or("Account not found")?;
-            
             if let Some(unlock_time) = account.locked_until {
                 if ic_cdk::api::time() < unlock_time {
                     return Err("Account is locked".to_string());
                 }
             }
-            
             let current_collateral = account.collateral_positions.get(&token_type).unwrap_or(&0);
             if amount > *current_collateral {
                 return Err("Insufficient collateral balance".to_string());
             }
         }
-        
-        // Check health factor after withdrawal
         let original_amount = {
             let account = state.accounts.get(&caller).unwrap();
             *account.collateral_positions.get(&token_type).unwrap_or(&0)
         };
-        
-        // Temporarily modify the collateral amount to check health
         {
             let account = state.accounts.get_mut(&caller).unwrap();
             *account.collateral_positions.entry(token_type).or_insert(0) -= amount;
         }
-        
         let health_factor = calculate_health_factor(&state, &caller)?;
-        
-        if health_factor < 100 { // Health factor below 1.0
-            // Revert the change
+        if health_factor < 100 {
             let account = state.accounts.get_mut(&caller).unwrap();
             *account.collateral_positions.entry(token_type).or_insert(0) = original_amount;
             return Err("Withdrawal would cause liquidation".to_string());
         }
-        
+        // Log event
+        state.event_logs.push(EventLog {
+            timestamp: ic_cdk::api::time(),
+            principal: caller,
+            event_type: "withdraw_collateral".to_string(),
+            details: format!("Withdrew {} {}", amount, symbol),
+        });
         Ok(format!("Successfully withdrew {} {}", amount, symbol))
     })
 }
@@ -429,30 +411,22 @@ fn lock_tokens(token_type: TokenType, amount: TokenAmount, duration_days: u64) -
     if amount == 0 || duration_days == 0 {
         return Err("Amount and duration must be greater than zero".to_string());
     }
-    
     let caller = caller();
     let duration_seconds = duration_days * 24 * 3600;
     let current_time = ic_cdk::api::time();
     let unlock_time = current_time + duration_seconds * 1_000_000_000; // Convert to nanoseconds
-    
     STATE.with(|state| {
         let mut state = state.borrow_mut();
-        
         if state.is_paused {
             return Err("Contract is paused".to_string());
         }
-        
         let symbol = state.token_info.get(&token_type).unwrap().symbol.clone();
-        
         let account = state.accounts.get_mut(&caller)
             .ok_or("Account not found")?;
-        
         let current_balance = account.collateral_positions.get(&token_type).unwrap_or(&0);
         if amount > *current_balance {
             return Err("Insufficient balance to lock".to_string());
         }
-        
-        // Calculate bonus rate based on duration
         let bonus_rate = match duration_days {
             1..=30 => 100,    // 1% bonus
             31..=90 => 200,   // 2% bonus
@@ -460,7 +434,6 @@ fn lock_tokens(token_type: TokenType, amount: TokenAmount, duration_days: u64) -
             181..=365 => 500, // 5% bonus
             _ => 1000,        // 10% bonus for >1 year
         };
-        
         let lock_info = LockInfo {
             amount,
             token_type,
@@ -468,10 +441,15 @@ fn lock_tokens(token_type: TokenType, amount: TokenAmount, duration_days: u64) -
             unlock_time,
             bonus_rate,
         };
-        
         account.locked_until = Some(unlock_time);
         state.lock_positions.entry(caller).or_insert_with(Vec::new).push(lock_info);
-        
+        // Log event
+        state.event_logs.push(EventLog {
+            timestamp: ic_cdk::api::time(),
+            principal: caller,
+            event_type: "lock_tokens".to_string(),
+            details: format!("Locked {} {} for {} days with {}% bonus", amount, symbol, duration_days, bonus_rate as f64 / 100.0),
+        });
         Ok(format!("Successfully locked {} {} for {} days with {}% bonus", 
                   amount, symbol, duration_days, bonus_rate as f64 / 100.0))
     })
@@ -481,24 +459,18 @@ fn lock_tokens(token_type: TokenType, amount: TokenAmount, duration_days: u64) -
 fn liquidate(user: Principal, collateral_token: TokenType, debt_token: TokenType, 
             repay_amount: TokenAmount) -> Result<String, String> {
     let caller = caller();
-    
     STATE.with(|state| {
         let mut state = state.borrow_mut();
-        
         if state.is_paused {
             return Err("Contract is paused".to_string());
         }
-        
         if caller == user {
             return Err("Cannot liquidate yourself".to_string());
         }
-        
         let health_factor = calculate_health_factor(&state, &user)?;
-        if health_factor >= 100 { // Health factor >= 1.0
+        if health_factor >= 100 {
             return Err("Position is healthy, cannot liquidate".to_string());
         }
-        
-        // Get token info first
         let debt_symbol = state.token_info.get(&debt_token).unwrap().symbol.clone();
         let collateral_symbol = state.token_info.get(&collateral_token).unwrap().symbol.clone();
         let debt_price = state.token_info.get(&debt_token).unwrap().price_usd;
@@ -506,45 +478,46 @@ fn liquidate(user: Principal, collateral_token: TokenType, debt_token: TokenType
         let collateral_price = state.token_info.get(&collateral_token).unwrap().price_usd;
         let collateral_decimals = state.token_info.get(&collateral_token).unwrap().decimals;
         let liquidation_bonus = state.token_info.get(&collateral_token).unwrap().liquidation_bonus;
-        
         let user_account = state.accounts.get_mut(&user)
             .ok_or("User account not found")?;
-        
         let debt_balance = user_account.debt_positions.get(&debt_token).unwrap_or(&0);
         let actual_repay = repay_amount.min(*debt_balance);
-        
         if actual_repay == 0 {
             return Err("No debt to liquidate".to_string());
         }
-        
-        // Calculate collateral to seize
         let debt_value_usd = (actual_repay * debt_price) / (10_u128.pow(debt_decimals as u32));
         let bonus_value_usd = (debt_value_usd * liquidation_bonus as u128) / 10000;
         let total_seize_value_usd = debt_value_usd + bonus_value_usd;
-        
         let collateral_to_seize = (total_seize_value_usd * (10_u128.pow(collateral_decimals as u32))) / collateral_price;
-        
         let collateral_balance = user_account.collateral_positions.get(&collateral_token).unwrap_or(&0);
         let actual_seize = collateral_to_seize.min(*collateral_balance);
-        
-        // Update user account
         *user_account.debt_positions.entry(debt_token).or_insert(0) -= actual_repay;
         *user_account.collateral_positions.entry(collateral_token).or_insert(0) -= actual_seize;
-        
-        // Update liquidator account
         let liquidator_account = state.accounts.entry(caller).or_insert_with(|| Account {
             principal: caller,
             ..Default::default()
         });
         *liquidator_account.collateral_positions.entry(collateral_token).or_insert(0) += actual_seize;
-        
-        // Update pool
         let pool = state.pools.get_mut(&debt_token).unwrap();
         pool.total_borrowed = pool.total_borrowed.saturating_sub(actual_repay);
-        
+        // Log event
+        state.event_logs.push(EventLog {
+            timestamp: ic_cdk::api::time(),
+            principal: caller,
+            event_type: "liquidate".to_string(),
+            details: format!("Liquidated {}: repaid {} {}, seized {} {}", user, actual_repay, debt_symbol, actual_seize, collateral_symbol),
+        });
         Ok(format!("Liquidation successful. Repaid {} {}, seized {} {}", 
                   actual_repay, debt_symbol, 
                   actual_seize, collateral_symbol))
+    })
+}
+// === EVENT LOG QUERY ===
+
+#[query]
+fn get_event_logs() -> Vec<EventLog> {
+    STATE.with(|state| {
+        state.borrow().event_logs.clone()
     })
 }
 
